@@ -1,0 +1,43 @@
+import  torch
+import torch.nn as nn
+import numpy as np
+x = np.arange(0, 24)
+x = x.reshape((2, 3, 4)) #(b,k,n)
+x = torch.from_numpy(x).float()
+print(x)
+print(f'x.shape:{x.shape}')
+b = x.repeat(1,3,1)
+print(f'b.shape:{b.shape}')
+# print(b)
+print('=' * 50)
+c = x.repeat_interleave(3, dim=1)
+print(f'c.shape:{c.shape}')
+# print(c)
+combind = torch.cat((c, b), dim=2)
+print(combind.shape)
+print(combind)
+a_input = combind.view(x.size(0), 3, 3, 2*4)
+print(f'a_input.shape:{a_input.shape}')
+print(a_input)
+
+print('='*20 + 'the gatv2 process' + '='*20)
+lin = nn.Linear(8, 8)
+leakyrelu = nn.LeakyReLU(0.2)
+sigmoid = nn.Sigmoid()
+a = nn.Parameter(torch.empty((8, 1)))
+nn.init.xavier_uniform_(a.data, gain=1.414)
+bias = nn.Parameter(torch.empty(3, 3))
+
+tmpret = lin(a_input) #(2,3,3,8)
+a_input = leakyrelu(tmpret) #(2,3,3,8)
+e = torch.matmul(a_input, a).squeeze(3) #(2,3,3)
+e += bias
+attention = torch.softmax(e, dim=2) #(2,3,3)
+attention = torch.dropout(attention, 0.2, train=True) #(2,3,3)
+h = sigmoid(torch.matmul(attention, x))
+print(f"h.shape{h.shape}") #(2,3,4)
+print(h)
+
+fc = nn.Linear(4, 5)
+out = fc(h)
+print(f"out.shape={out.shape}")
