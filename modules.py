@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import math
 class FeatureAttentionLayer(nn.Module):
     def __init__(self, n_features, window_size, dropout, alpha, embed_dim=None):
         super(FeatureAttentionLayer, self).__init__()
@@ -152,6 +152,69 @@ class ReconstructionModel(nn.Module):
         return out
 
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        # self.dropout = nn.Dropout(p=dropout) #表示每个神经元有p的可能性不被激活
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1) #shape (mat_len, 1)
+        div_term = torch.exp(torch.arange(0, d_model).float() * (-math.log(10000.0) / d_model))
+        pe += torch.sin(position * div_term)
+        pe += torch.cos(position * div_term)
+        # pe[:, 0::2] = torch.sin(position * div_term) #奇数列
+        # pe[:, 1::2] = torch.cos(position * div_term) #偶数列
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x, pos=0):
+        x = x + self.pe[pos:pos+x.size(0), :] #x(10,128,76)
+        # return self.dropout(x) #x(10,128,76)
+        return x
+
+class TransformerEncoderLayer(nn.Module):
+    def __init__(self, d_model, nhead, dim_feedforward=16, dropout=0):
+        super(TransformerEncoderLayer, self).__init__()
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, d_model) #d_model = feats*2 = 38*2 = 76
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+
+        self.activation = nn.LeakyReLU(True)
+
+    def forward(self, src, src_mask=None, src_key_padding_mask=None):
+        src2 = self.self_attn(src, src, src)[0]
+        src = src + self.dropout1(src2)
+        src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
+        src = src + self.dropout2(src2) # 应该代表残差连接
+        return src # encoder的输出(10,128,76)
+
+class TransformerDecoderLayer(nn.Module):
+    def __init__(self, d_model, nhead, dim_feedforward=16, dropout=0):
+        # d_model = embed_dim
+        super(TransformerDecoderLayer, self).__init__()
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        self.dropout3 = nn.Dropout(dropout)
+
+        self.activation = nn.LeakyReLU(True)
+
+    def forward(self, tgt, memory, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
+        tgt2 = self.self_attn(tgt, tgt, tgt)[0]
+        tgt = tgt + self.dropout1(tgt2)
+        tgt2 = self.multihead_attn(tgt, memory, memory)[0] # memory是encoder的输出.
+        # tgt和memory的维度可以不一样
+        tgt = tgt + self.dropout2(tgt2)
+        tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
+        tgt = tgt + self.dropout3(tgt2)
+        return tgt
 
 
 

@@ -55,7 +55,7 @@ class Trainer:
                 y = y.to(self.device)
                 self.optimizer.zero_grad()
 
-                preds, recons = self.model(x)  # 预测结果
+                preds, recons = self.model(x, y)  # 预测结果
 
                 if preds.ndim == 3:
                     preds = preds.squeeze(1)
